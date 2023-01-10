@@ -15,18 +15,33 @@ app.get('/tokens', async (req, res) => {
 			.status(400)
 			.send({ error: 'Missing required parameter: currency' })
 	}
+
 	try {
-		// get all tokens from etherspot
+		// get all crypto tokens from etherspot
 		const tokens = await etherspot.getTokenListTokens()
-		let tokenItems = tokens.map((t) => t.symbol).slice(0, 500)
+		const tokenItems = tokens.map((t) => t.symbol)
 
 		if (tokenItems.length) {
-			// coinGecko URL to get dynamic currency record
-			const coinGeckoUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${tokenItems.join(
-				',',
-			)}&vs_currencies=${currency}`
-			const response = await axios.get(coinGeckoUrl)
-			return res.send({ data: { fialValue: response.data, token: tokenItems } })
+			// create batch to send data in chunks for coinGecko
+			const batchSize = 150
+			const numBatches = Math.ceil(tokenItems.length / batchSize)
+			const coinGeckoALLData = []
+			for (let i = 0; i < numBatches; i++) {
+				const start = i * batchSize
+				const end = start + batchSize
+				const batch = tokenItems.slice(start, end)
+				// coinGecko URL to get dynamic currency record
+				const coinGeckoUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${batch.join(
+					',',
+				)}&vs_currencies=${encodeURIComponent(currency)}`
+				const data = await axios.get(coinGeckoUrl)
+				coinGeckoALLData.push(data.data)
+			}
+			// need data in a single object
+			const result = coinGeckoALLData.reduce((acc, curr) => {
+				return { ...acc, ...curr }
+			}, {})
+			return res.send({ result })
 		}
 	} catch (err) {
 		return res.status(500).json({
